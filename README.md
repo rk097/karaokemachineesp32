@@ -12,9 +12,8 @@ An embedded karaoke box using an ESP32 with:
 - 🎙️ Mic input with digital processing
 - 🎶 Bluetooth streaming from phone
 - 🔊 Speaker and mic volume control
-- ⏱️ Lyric scroll synced to song
 - 🎛️ Echo effect toggle
-- 📁 WAV file test track (on flash or SD)
+- Pitch detection via FFT
 
 ## 🛒 Hardware
 - ESP32-WROOM-32
@@ -24,15 +23,6 @@ An embedded karaoke box using an ESP32 with:
 - SD card reader (optional)
 - Rotary encoder + pushbuttons
 - Powered speaker
-
-## 🗺️ Roadmap
-- [ ] Mic passthrough
-- [ ] I²S speaker output
-- [ ] Echo effect
-- [ ] A2DP sink streaming
-- [ ] Lyric scroller synced to test track
-- [ ] Volume control logic
-- [ ] Integrated UX/UI
 
 ## 📦 License
 MIT
