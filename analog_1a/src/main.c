@@ -9,6 +9,7 @@
 // handlers
 adc_continuous_handle_t adc_handle = NULL;
 QueueHandle_t adc_queue = NULL;
+QueueHandle_t i2s_queue = NULL;
 
 // initialize the adc continuous driver on ADC1 channel 0 (GPIO36)
 void adc_init(adc_continuous_handle_t* handle_ptr) {
@@ -92,13 +93,17 @@ void adc_to_i2s_task(void *param) {
         if (xQueueReceive(adc_queue, &data, portMAX_DELAY) == pdTRUE) {
             if (data != NULL) {
                 // scale to i2s format
+                int16_t* i2s_data = malloc(FRAME_SIZE/2 * sizeof(int16_t)); // allocate memory for i2s data
                 for (uint16_t i = 0; i < FRAME_SIZE; i += 2) {
                     uint16_t sample = convert_adc_sample(data[i], data[i + 1]); // lower 12 bits are adc
-                    int16_t scaled_value = scale_adc_to_i2s(sample, idle_adc_val);
-                    printf("Scaled value: %d\n", scaled_value);
+                    i2s_data[i/2] = scale_adc_to_i2s(sample, idle_adc_val); // 2048 adc half-samples filled into 1024 i2s samples
                     // For example: i2s_write(I2S_NUM_0, &scaled_value, sizeof(scaled_value), &bytes_written, portMAX_DELAY);
                 }
                 free(data); // free after processing
+                if(xQueueSend(i2s_queue, &i2s_data, portMAX_DELAY) != pdTRUE) {
+                    printf("Failed to send i2s data to queue\n");
+                    free(i2s_data); // free if send failed
+                } 
             }
         } else {
             printf("Failed to receive data from queue\n");
@@ -111,6 +116,14 @@ void app_main(void) {
     adc_queue = xQueueCreate(6, sizeof(uint8_t*)); // store pointers to data buffers to prevent unnecessary copies
     if (adc_queue == NULL) {
         printf("Failed to create xqueue\n");
+        return;
+    }
+
+    // queue for i2s data
+    i2s_queue = xQueueCreate(6, sizeof(int16_t*)); // store pointers to i2s data buffers
+    if (i2s_queue == NULL) {
+        printf("Failed to create i2s queue\n");
+        vQueueDelete(adc_queue); // cleanup adc queue
         return;
     }
 
