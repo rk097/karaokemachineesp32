@@ -36,7 +36,7 @@ void adc_init(adc_continuous_handle_t* handle_ptr, uint32_t frame_size) {
 esp_err_t adc_read_once(adc_continuous_handle_t* handle_ptr, uint8_t* data, uint32_t frame_size, bool dbg) {
     esp_err_t ret;
     uint32_t delay, retnum;
-    if (dbg) delay = 500; else delay = 30; // ms to wait for data, 30ms is enough for 44.1kHz
+    if (dbg) delay = 500; else delay = 40; // ms to wait for data, 30ms is enough for 44.1kHz
     ret = adc_continuous_read(*handle_ptr, data, frame_size, &retnum, delay); // 500 ms for dbg, 30ms actual
     
     if (ret == ESP_OK) {
