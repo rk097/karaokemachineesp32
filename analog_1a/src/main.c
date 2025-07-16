@@ -41,7 +41,7 @@ void adc_init(adc_continuous_handle_t* handle_ptr) {
 
 // fills data from adc stream once.
 // will fail if init & start not called first
-void adc_read_once(adc_continuous_handle_t* handle_ptr, uint8_t* data, bool dbg) {
+esp_err_t adc_read_once(adc_continuous_handle_t* handle_ptr, uint8_t* data, bool dbg) {
     esp_err_t ret;
     uint32_t delay, retnum;
     if (dbg) delay = 500; else delay = 30; // ms to wait for data, 30ms is enough for 44.1kHz
@@ -61,6 +61,8 @@ void adc_read_once(adc_continuous_handle_t* handle_ptr, uint8_t* data, bool dbg)
     } else {
         printf("ADC read error: %d\n", ret);
     }
+
+    return ret;
 }
 
 // task to read adc data continuously
@@ -68,12 +70,12 @@ void adc_read_task(void *param) {
     while (1) {
         uint8_t* data = malloc(FRAME_SIZE); // buffer in pure bytes
         adc_read_once(&adc_handle, data, false);
-        printf("Data read from ADC: %d\n", *data); // print first byte for debug
         
-        if(xQueueSend(adc_queue, &data, pdMS_TO_TICKS(30)) != pdTRUE) {
+        if(xQueueSend(adc_queue, &data, pdMS_TO_TICKS(100)) != pdTRUE) {
             printf("Failed to send data to queue\n");
             free(data); // free if send failed. needs to freed on receiver end if send succeeds
         } // send data to queue
+        /*
         else { // dbg only
             printf("Data sent to queue\n");
             uint8_t* temp = NULL;
@@ -81,16 +83,45 @@ void adc_read_task(void *param) {
                 printf("Received from self: %d\n", *temp);
                 free(temp);
             }
+        }*/
+    }
+}
+
+// adc to i2s processing task
+void adc_to_i2s_task(void *param) {
+    uint8_t* data = malloc(FRAME_SIZE); 
+    uint16_t idle_adc_val;
+    // find idle value 
+    while(adc_read_once(&adc_handle, data, false) != ESP_OK) {}; 
+    idle_adc_val = find_idle_value(data); // find idle value for i2s scaling
+    free(data); // free after finding idle value
+    data = NULL; // reset pointer
+
+    printf("Idle ADC value: %d\n", idle_adc_val);
+
+    while (1) {
+        if (xQueueReceive(adc_queue, &data, portMAX_DELAY) == pdTRUE) {
+            if (data != NULL) {
+                // scale to i2s format
+                for (uint16_t i = 0; i < FRAME_SIZE; i += 2) {
+                    uint16_t sample = convert_adc_sample(data[i], data[i + 1]); // lower 12 bits are adc
+                    int16_t scaled_value = scale_adc_to_i2s(sample, idle_adc_val);
+                    // Here you would send the scaled_value to I2S
+                    printf("Scaled value: %d\n", scaled_value);
+                    // For example: i2s_write(I2S_NUM_0, &scaled_value, sizeof(scaled_value), &bytes_written, portMAX_DELAY);
+                }
+                free(data); // free after processing
+            }
+        } else {
+            printf("Failed to receive data from queue\n");
         }
     }
 }
 
 void app_main(void) {
-    uint16_t idle_adc_val;
-    uint8_t data[FRAME_SIZE];
 
     // queue for adc readings
-    adc_queue = xQueueCreate(6, sizeof(uint8_t*)); // 6 items, each item is a pointer to data
+    adc_queue = xQueueCreate(6, sizeof(uint8_t*)); // store pointers to data buffers to prevent unnecessary copies
     if (adc_queue == NULL) {
         printf("Failed to create xqueue\n");
         return;
@@ -101,12 +132,9 @@ void app_main(void) {
     // start ADC continuous sampling
     ESP_ERROR_CHECK(adc_continuous_start(adc_handle));
 
-    // find idle value 
-    adc_read_once(&adc_handle, data, false); 
-    idle_adc_val = find_idle_value(data); // find idle value for i2s scaling
-
     // start threads
-    xTaskCreate(adc_read_task, "adc_read_task", 2048, NULL, 5, NULL);
+    xTaskCreate(adc_read_task, "adc_read_task", 4096, NULL, 5, NULL); 
+    xTaskCreate(adc_to_i2s_task, "adc_to_i2s_task", 4096, NULL, 5, NULL); 
 
     // stop adc 
     //ESP_ERROR_CHECK(adc_continuous_stop(adc_handle));
