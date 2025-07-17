@@ -6,7 +6,16 @@
 
 void i2s_init(i2s_chan_handle_t* chan_handle_ptr) {
     // initialize i2s channel and i2s settings
-    i2s_chan_config_t i2s_out_chan_config = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_AUTO, I2S_ROLE_MASTER);
+    i2s_chan_config_t i2s_out_chan_config = { 
+        .id = I2S_NUM_AUTO, 
+        .role = I2S_ROLE_MASTER, 
+        .dma_desc_num = 4, 
+        .dma_frame_num = 1024, 
+        .auto_clear_after_cb = false, 
+        .auto_clear_before_cb = false,
+        .allow_pd = false, 
+        .intr_priority = 0, 
+    };
     ESP_ERROR_CHECK(i2s_new_channel(&i2s_out_chan_config, chan_handle_ptr, NULL));
 
     i2s_std_config_t i2s_out_config = {
@@ -32,7 +41,7 @@ void i2s_init(i2s_chan_handle_t* chan_handle_ptr) {
 esp_err_t i2s_write_once(i2s_chan_handle_t* chan_handle_ptr, int16_t* data, size_t frame_size) {
     size_t bytes_written;
     // write to i2s
-    esp_err_t ret = i2s_channel_write(*chan_handle_ptr, data, frame_size * sizeof(int16_t), &bytes_written, pdMS_TO_TICKS(30));
+    esp_err_t ret = i2s_channel_write(*chan_handle_ptr, data, frame_size, &bytes_written, portMAX_DELAY);
     if (ret != ESP_OK) {
         if (ret == ESP_ERR_TIMEOUT) printf("I2S write timeout\n");
         else printf("I2S write error: %d\n", ret);
