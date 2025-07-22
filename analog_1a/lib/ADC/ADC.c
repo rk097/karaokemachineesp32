@@ -44,10 +44,7 @@ esp_err_t adc_read_once(adc_continuous_handle_t* handle_ptr, uint8_t* data, uint
         printf("ADC read timeout\n");
     } else if (ret != ESP_OK) {
         printf("ADC read error: %d\n", ret);
-    } else {
-        adc_bytes_cnt += retnum;
-    }
-
+    } 
     
     return ret;
 }

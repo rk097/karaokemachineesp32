@@ -47,8 +47,6 @@ esp_err_t i2s_write_once(i2s_chan_handle_t* chan_handle_ptr, int16_t* data, size
     if (ret != ESP_OK) {
         if (ret == ESP_ERR_TIMEOUT) printf("I2S write timeout\n");
         else printf("I2S write error: %d\n", ret);
-    } else {
-        i2s_bytes_cnt += bytes_written;
-    }
+    } 
     return ret;
 }
