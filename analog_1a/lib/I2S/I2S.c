@@ -4,8 +4,6 @@
 #include "I2S.h"
 #include "driver/i2s_std.h"
 
-extern volatile int i2s_bytes_cnt;
-
 void i2s_init(i2s_chan_handle_t* chan_handle_ptr, uint32_t sample_rate) {
     // initialize i2s channel and i2s settings
     i2s_chan_config_t i2s_out_chan_config = { 
