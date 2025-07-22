@@ -5,8 +5,6 @@
 #include "ADC.h"
 #include "utils.h"
 
-extern volatile int adc_bytes_cnt;
-
 void adc_init(adc_continuous_handle_t* handle_ptr, uint32_t frame_size, uint32_t sample_rate) {
     adc_continuous_handle_cfg_t adc_init_config = {
         .max_store_buf_size = frame_size * 4,
