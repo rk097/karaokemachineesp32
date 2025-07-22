@@ -5,7 +5,7 @@
 #include "ADC.h"
 #include "utils.h"
 
-void adc_init(adc_continuous_handle_t* handle_ptr, uint32_t frame_size) {
+void adc_init(adc_continuous_handle_t* handle_ptr, uint32_t frame_size, uint32_t sample_rate) {
     adc_continuous_handle_cfg_t adc_init_config = {
         .max_store_buf_size = frame_size * 4,
         .conv_frame_size = frame_size // in bytes
@@ -13,7 +13,7 @@ void adc_init(adc_continuous_handle_t* handle_ptr, uint32_t frame_size) {
     ESP_ERROR_CHECK(adc_continuous_new_handle(&adc_init_config, handle_ptr));
 
     adc_continuous_config_t adc_read_config = {
-        .sample_freq_hz = 44100, // 44.1 khz
+        .sample_freq_hz = sample_rate, // 44.1 khz
         .pattern_num = 1,
         .conv_mode = ADC_CONV_SINGLE_UNIT_1, // ADC1 only
         .format = ADC_DIGI_OUTPUT_FORMAT_TYPE1
@@ -33,24 +33,14 @@ void adc_init(adc_continuous_handle_t* handle_ptr, uint32_t frame_size) {
     printf("ADC continuous driver initialized\n");
 }
 
-esp_err_t adc_read_once(adc_continuous_handle_t* handle_ptr, uint8_t* data, uint32_t frame_size, bool dbg) {
+esp_err_t adc_read_once(adc_continuous_handle_t* handle_ptr, uint8_t* data, uint32_t frame_size, uint16_t delay) {
     esp_err_t ret;
-    uint32_t delay, retnum;
-    if (dbg) delay = 500; else delay = 40; // ms to wait for data, 30ms is enough for 44.1kHz
+    uint32_t retnum;
     ret = adc_continuous_read(*handle_ptr, data, frame_size, &retnum, delay); // 500 ms for dbg, 30ms actual
     
-    if (ret == ESP_OK) {
-        if (dbg) {
-            printf("Read %lu bytes\n", (unsigned long)retnum);
-            //for (uint32_t i = 0; i < *retnum; i += 2) { // print one value vs continuous stream
-                uint16_t sample = convert_adc_sample(data[0], data[1]); // lower 12 bits are adc
-                printf("%d\n", sample);
-            //}
-            vTaskDelay(pdMS_TO_TICKS(delay));
-        }
-    } else if (ret == ESP_ERR_TIMEOUT) {
+    if (ret == ESP_ERR_TIMEOUT) {
         printf("ADC read timeout\n");
-    } else {
+    } else if (ret != ESP_OK) {
         printf("ADC read error: %d\n", ret);
     }
 

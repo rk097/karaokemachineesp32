@@ -4,7 +4,7 @@
 #include "I2S.h"
 #include "driver/i2s_std.h"
 
-void i2s_init(i2s_chan_handle_t* chan_handle_ptr) {
+void i2s_init(i2s_chan_handle_t* chan_handle_ptr, uint32_t sample_rate) {
     // initialize i2s channel and i2s settings
     i2s_chan_config_t i2s_out_chan_config = { 
         .id = I2S_NUM_AUTO, 
@@ -19,7 +19,7 @@ void i2s_init(i2s_chan_handle_t* chan_handle_ptr) {
     ESP_ERROR_CHECK(i2s_new_channel(&i2s_out_chan_config, chan_handle_ptr, NULL));
 
     i2s_std_config_t i2s_out_config = {
-        .clk_cfg  = I2S_STD_CLK_DEFAULT_CONFIG(44100),
+        .clk_cfg  = I2S_STD_CLK_DEFAULT_CONFIG(sample_rate),
         .slot_cfg = I2S_STD_MSB_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO),
         .gpio_cfg = {
             .mclk = I2S_GPIO_UNUSED,    // some codecs may require mclk signal, this example doesn't need it
