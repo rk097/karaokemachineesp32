@@ -12,7 +12,9 @@ adc_continuous_handle_t adc_handle = NULL;
 i2s_chan_handle_t i2s_out_handle = NULL;
 QueueHandle_t adc_queue = NULL;
 QueueHandle_t i2s_queue = NULL;
-const int adc_delay_ms = 1000*FRAME_SIZE/SAMPLE_RATE;
+const int adc_delay_ms = 1000*FRAME_SIZE/SAMPLE_RATE; // how long adc_continuous_read should wait for reads
+volatile int adc_bytes_cnt = 0;
+volatile int i2s_bytes_cnt = 0;
 
 // anti cricket stuff.
 static const int16_t fir7[4] = { 175, 603, 886, 1024 }; // Q15 coeffs
@@ -99,28 +101,6 @@ void i2s_out_task(void *param) {
     }
 }
 
-// test tone
-void playTone(float freq) {
-  const int sampleRate = 44100;
-  const int amplitude = 1000;
-  const int samples = 256;
-  int16_t buffer[samples];
-
-  float phase = 0.0f;
-  float phaseIncrement = 2.0f * M_PI * freq / sampleRate;
-
-  while (1) {
-    for (int i = 0; i < samples; i++) {
-      buffer[i] = (int16_t)(amplitude * sinf(phase));
-      phase += phaseIncrement;
-      if (phase >= 2.0f * M_PI)
-        phase -= 2.0f * M_PI;
-    }
-
-    i2s_write_once(&i2s_out_handle, buffer, sizeof(buffer));
-  }
-}
-
 void app_main(void) {
     // queue for adc readings
     adc_queue = xQueueCreate(6, sizeof(uint8_t*)); // store pointers to data buffers to prevent unnecessary copies
@@ -146,6 +126,14 @@ void app_main(void) {
 
     // start threads
     xTaskCreate(adc_read_task, "adc_read_task", 4096, NULL, 5, NULL); 
+
     xTaskCreate(adc_to_i2s_task, "adc_to_i2s_task", 4096, NULL, 5, NULL); 
+    
+
     xTaskCreate(i2s_out_task, "i2s_out_task", 4096, NULL, 5, NULL);
+
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    printf("ADC bytes in one second: %d\n", adc_bytes_cnt);
+    printf("I2S bytes in one second: %d\n", i2s_bytes_cnt);
+
 }

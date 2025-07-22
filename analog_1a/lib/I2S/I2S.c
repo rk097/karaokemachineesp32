@@ -4,6 +4,8 @@
 #include "I2S.h"
 #include "driver/i2s_std.h"
 
+extern volatile int i2s_bytes_cnt;
+
 void i2s_init(i2s_chan_handle_t* chan_handle_ptr, uint32_t sample_rate) {
     // initialize i2s channel and i2s settings
     i2s_chan_config_t i2s_out_chan_config = { 
@@ -45,6 +47,8 @@ esp_err_t i2s_write_once(i2s_chan_handle_t* chan_handle_ptr, int16_t* data, size
     if (ret != ESP_OK) {
         if (ret == ESP_ERR_TIMEOUT) printf("I2S write timeout\n");
         else printf("I2S write error: %d\n", ret);
-    } 
+    } else {
+        i2s_bytes_cnt += bytes_written;
+    }
     return ret;
 }

@@ -5,6 +5,8 @@
 #include "ADC.h"
 #include "utils.h"
 
+extern volatile int adc_bytes_cnt;
+
 void adc_init(adc_continuous_handle_t* handle_ptr, uint32_t frame_size, uint32_t sample_rate) {
     adc_continuous_handle_cfg_t adc_init_config = {
         .max_store_buf_size = frame_size * 4,
@@ -13,7 +15,7 @@ void adc_init(adc_continuous_handle_t* handle_ptr, uint32_t frame_size, uint32_t
     ESP_ERROR_CHECK(adc_continuous_new_handle(&adc_init_config, handle_ptr));
 
     adc_continuous_config_t adc_read_config = {
-        .sample_freq_hz = sample_rate, // 44.1 khz
+        .sample_freq_hz = sample_rate,  
         .pattern_num = 1,
         .conv_mode = ADC_CONV_SINGLE_UNIT_1, // ADC1 only
         .format = ADC_DIGI_OUTPUT_FORMAT_TYPE1
@@ -42,7 +44,10 @@ esp_err_t adc_read_once(adc_continuous_handle_t* handle_ptr, uint8_t* data, uint
         printf("ADC read timeout\n");
     } else if (ret != ESP_OK) {
         printf("ADC read error: %d\n", ret);
+    } else {
+        adc_bytes_cnt += retnum;
     }
 
+    
     return ret;
 }
