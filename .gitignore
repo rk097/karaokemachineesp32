@@ -1,3 +1,6 @@
 analog_1a/include/README
 analog_1a/lib/README
 analog_1a/src/CMakeLists.txt
+digital_1b/include/README
+digital_1b/lib/README
+digital_1b/src/CMakeLists.txt
