@@ -29,3 +29,21 @@ int16_t scale_adc_to_i2s(uint16_t adc_sample, uint16_t idle_adc_val) {
 
     return (int16_t)scaled;
 }
+
+
+// anti cricket stuff.
+static const int16_t fir7[4] = { 175, 603, 886, 1024 }; // Q15 coeffs
+static int16_t lowpass_delay[7];
+static uint8_t idx = 0;
+
+int16_t lowpass_7kHz(int16_t x) { // move to utils..?
+    lowpass_delay[idx] = x;
+
+    int32_t acc =  fir7[3] * lowpass_delay[idx]                                 // h3·x[n-3]
+                 + fir7[2] * (lowpass_delay[(idx+6)%7] + lowpass_delay[(idx+1)%7])      // h2·(x[n]+x[n-6])
+                 + fir7[1] * (lowpass_delay[(idx+5)%7] + lowpass_delay[(idx+2)%7])      // h1· …
+                 + fir7[0] * (lowpass_delay[(idx+4)%7] + lowpass_delay[(idx+3)%7]);     // h0· …
+
+    idx = (idx + 1) % 7;
+    return (int16_t)(acc >> 15);
+}

@@ -1,7 +1,8 @@
-#ifndef GLOBALS_H
-#define GLOBALS_H
+#ifndef CONSTANTS_H
+#define CONSTANTS_H
 
-#define FRAME_SIZE 2048 // adc read frame size in bytes
+#define FRAME_SIZE 256 // size per DMA buffer
+#define DMA_BUFFER_COUNT 8 // # of dma buffers
 #define SAMPLE_RATE 32000 //in hz
 
 #endif
