@@ -23,9 +23,10 @@ void i2s_read_task(void* param) {
             if (i2s_read_once(&i2s_in_handle, raw_input_buffer, FRAME_SIZE) == ESP_OK) {
                 for (uint16_t i = 0; i < FRAME_SIZE; i++) {
                    //printf("raw data: %ld\n", raw_input_buffer[i] << 1 >> 8);
-                   //printf("in_sample = 0x%08X\n", (int)raw_input_buffer[i]);
+                    //printf("in_sample = 0x%08X\n", (unsigned int)raw_input_buffer[i]);
                     raw_input_buffer[i] <<= 1; // because MSB starts in pos 2
                     raw_input_buffer[i] >>= 8; // drop off garbage bits in 24-bit format, might not be needed because output also expects MSB
+                    //printf("shifted_in_sample = 0x%06X\n", (unsigned int)raw_input_buffer[i]);
                 }
                 if (xQueueSend(i2s_queue_busy, &raw_input_buffer, portMAX_DELAY) != pdTRUE) {
                     printf("Could not send data to busy queue\n");
@@ -44,16 +45,17 @@ void i2s_write_task(void *param) {
                 for (int i = 0; i < FRAME_SIZE; i++) {
                    // printf("data to write: %ld\n", i2s_data[i]);
                    i2s_data[i] <<= 8; 
-                   printf("out_sample = %ld\n", i2s_data[i]);
+                   //printf("out_sample = 0x%08X\n", (unsigned int)i2s_data[i]);
                 }
                 i2s_write_once(&i2s_out_handle, i2s_data, FRAME_SIZE);
             }
-            if (xQueueSend(i2s_queue_busy, &i2s_data, portMAX_DELAY) != pdTRUE) {
+            if (xQueueSend(i2s_queue_free, &i2s_data, portMAX_DELAY) != pdTRUE) {
                 printf("Could not return buffer to free queue\n");
             } 
         } else {
             printf("Failed to receive i2s data from queue\n");
         }
+        //vTaskDelay(1);
     }
 }
 
