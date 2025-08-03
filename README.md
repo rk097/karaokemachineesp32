@@ -1,13 +1,5 @@
 # 🎤 ESP32 Karaoke Machine
 
-An embedded karaoke box using an ESP32 with:
-- Real-time microphone input
-- Bluetooth A2DP music streaming
-- Vocal effects (echo/delay)
-- Scrolling synced lyrics on OLED
-- Adjustable mic and speaker volume
-- One onboard test track
-
 ## 🔧 Features
 - 🎙️ Mic input with digital processing
 - 🎶 Bluetooth streaming from phone
