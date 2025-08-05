@@ -9,6 +9,35 @@
 
 #define TAG "A2DP"
 
+// on connection request
+void bt_app_gap_cb(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *param) {
+    switch (event) {
+        case ESP_BT_GAP_AUTH_CMPL_EVT:
+            if (param->auth_cmpl.stat == ESP_BT_STATUS_SUCCESS) {
+                ESP_LOGI(TAG, "Authentication success: %s", param->auth_cmpl.device_name);
+                ESP_LOG_BUFFER_HEX(TAG, param->auth_cmpl.bda, ESP_BD_ADDR_LEN);
+            } else {
+                ESP_LOGE(TAG, "Authentication failed, status:%d", param->auth_cmpl.stat);
+            }
+            break;
+
+        case ESP_BT_GAP_PIN_REQ_EVT:
+            ESP_LOGI(TAG, "PIN requested. Using default 1234");
+            esp_bt_pin_code_t pin_code = {'1', '2', '3', '4'};
+            esp_bt_gap_pin_reply(param->pin_req.bda, true, 4, pin_code);
+            break;
+
+        case ESP_BT_GAP_CFM_REQ_EVT:
+            ESP_LOGI(TAG, "SSP confirm requested. Accepting...");
+            esp_bt_gap_ssp_confirm_reply(param->cfm_req.bda, true);
+            break;
+
+        default:
+            ESP_LOGI(TAG, "Unhandled GAP event: %d", event);
+            break;
+    }
+}
+
 // Dummy audio data handler
 void bt_app_a2d_data_cb(const uint8_t *data, uint32_t len) {
     // TODO: Later pass to I2S pipeline
@@ -65,6 +94,7 @@ void app_main(void)
     esp_bt_pin_type_t pin_type = ESP_BT_PIN_TYPE_FIXED;
     esp_bt_pin_code_t pin_code = {'1', '2', '3', '4'};
     ESP_ERROR_CHECK(esp_bt_gap_set_pin(pin_type, 4, pin_code));
+    ESP_ERROR_CHECK(esp_bt_gap_register_callback(bt_app_gap_cb));
 
     // Register A2DP callbacks and initialize sink
     ESP_ERROR_CHECK(esp_a2d_register_callback(&bt_app_a2d_cb));
