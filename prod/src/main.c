@@ -6,11 +6,27 @@
 #include "esp_gap_bt_api.h"
 #include "esp_err.h"
 #include "esp_a2dp_api.h"
+#include "freertos/ringbuf.h"
+#include "freertos/FreeRTOSConfig.h"
+#include "freertos/FreeRTOS.h"
+#include "driver/i2s_std.h"
+#include "string.h"
+
+#include "constants.h"
+#include "I2S.h"
 
 #define TAG "A2DP"
+#define RINGBUFFER_CAPACITY sizeof(int32_t) * FRAME_SIZE * DMA_BUFFER_COUNT
+
+// globals
+i2s_chan_handle_t i2s_out_handle = NULL; // i2s output stream
+RingbufHandle_t bt_ringbuf = NULL; // bluetooth input bytes
+
+void temp_i2s_init();
+void i2s_write_task();
 
 // on connection request
-void bt_app_gap_cb(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *param) {
+void bt_app_gap_cb(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t* param) {
     switch (event) {
         case ESP_BT_GAP_AUTH_CMPL_EVT:
             if (param->auth_cmpl.stat == ESP_BT_STATUS_SUCCESS) {
@@ -39,18 +55,130 @@ void bt_app_gap_cb(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *param) {
 }
 
 // Dummy audio data handler
-void bt_app_a2d_data_cb(const uint8_t *data, uint32_t len) {
+void bt_app_a2d_data_cb(const uint8_t* data, uint32_t len) {
     // TODO: Later pass to I2S pipeline
-    ESP_LOGI(TAG, "Received audio data: %lu bytes", len);
+    // ESP_LOGI(TAG, "Received audio data: %lu bytes", len);
+    // write to ringbuffer. separate thread will write to i2s
+    if (xRingbufferSend(bt_ringbuf, data, len, 0) != pdTRUE) { // write failed. callback must be nonblocking
+        ESP_LOGI(TAG, "Ringbuffer is full");
+        return;
+    }
 }
 
 // Bluetooth event callback
-void bt_app_a2d_cb(esp_a2d_cb_event_t event, esp_a2d_cb_param_t *param) {
+void bt_app_a2d_cb(esp_a2d_cb_event_t event, esp_a2d_cb_param_t* param) {
     ESP_LOGI(TAG, "A2DP event: %d", event);
+    esp_a2d_cb_param_t* a2d = param;
+    assert(a2d != NULL);
+
+    switch(event) {
+        case ESP_A2D_CONNECTION_STATE_EVT: // handle a2dp connections
+            if (a2d->conn_stat.state == ESP_A2D_CONNECTION_STATE_CONNECTING) {
+                // init i2s
+                temp_i2s_init();
+            } else if (a2d->conn_stat.state == ESP_A2D_CONNECTION_STATE_CONNECTED) {
+                // start up i2s stuff
+                if ((bt_ringbuf = xRingbufferCreate(RINGBUFFER_CAPACITY, RINGBUF_TYPE_BYTEBUF)) == NULL) {
+                    ESP_LOGE(TAG, "%s ringbuffer create failed", __func__);
+                    return;
+                } // ringbuf needs to exist before a2dp connnections
+                ESP_LOGI(TAG, "Ringbuffer created");
+                ESP_ERROR_CHECK(i2s_channel_enable(i2s_out_handle));
+                ESP_LOGI(TAG, "I2S enabled");
+                xTaskCreate(i2s_write_task, "i2s_write_task", 4096, NULL, 5, NULL);
+                ESP_LOGI(TAG, "I2S Write Task has begun");
+            }
+            break;
+        case ESP_A2D_AUDIO_CFG_EVT: // when audio codec configure
+            // configure frequency.
+            ESP_LOGI(TAG, "config A2DP event: %d", event);
+            break;
+        default:
+            ESP_LOGI(TAG, "Unhandled A2DP event: %d", event);
+            break;
+    }
 }
 
+// initializes nvs and bluetooth stack.
+void bt_init();
+
 void app_main(void)
-{
+{   
+    bt_init();
+}
+
+// i2s output to speaker
+void i2s_write_task(void *param) {
+    int8_t* byte_data = NULL;
+    size_t item_size = 0;
+    while (1) {
+        byte_data = xRingbufferReceiveUpTo(bt_ringbuf, &item_size, portMAX_DELAY, 2*sizeof(int16_t) * FRAME_SIZE);
+        //ESP_LOGI(TAG, "I2S write task");
+        if (item_size != 0) {
+            /*
+            int16_t i2s_data[FRAME_SIZE*2] = {0};
+            for (int i = 0; i < item_size; i += 4) {
+                // Read Left and Right 16-bit samples (LSB is first)
+                int16_t left  = (int16_t)(byte_data[i+1] | (byte_data[i] << 8));
+                int16_t right = (int16_t)(byte_data[i+3] | (byte_data[i+2] << 8));
+
+                // Downmix to mono (simple average)
+                int32_t mono = (((int32_t)left) >> 1) + (((int32_t)right) >> 1);
+
+                // Left-justify into 32-bit I2S
+                i2s_data[i / 4] = mono << 16;
+                i2s_data[i / 2] = left >> 4;
+                i2s_data[i / 2 + 1] = right >> 4; // down scaling holy loud
+            } */
+            // i2s_write_once(&i2s_out_handle, i2s_data, FRAME_SIZE);
+            i2s_channel_write(i2s_out_handle, byte_data, FRAME_SIZE*sizeof(int16_t)*2, NULL, portMAX_DELAY);
+            
+            vRingbufferReturnItem(bt_ringbuf, byte_data);
+        } else {
+            printf("Failed to receive i2s data from ringbuffer\n");
+        }
+    }
+}
+
+void temp_i2s_init() {
+    int dma_buffer_count = DMA_BUFFER_COUNT;
+    int frame_size = FRAME_SIZE;
+    int sample_rate = SAMPLE_RATE;
+    i2s_chan_handle_t* output_chan_ptr = &i2s_out_handle;
+    // OUTPUT
+    i2s_chan_config_t i2s_chan_config_2 = {  // shared between input and output
+        .id = I2S_NUM_1, 
+        .role = I2S_ROLE_MASTER, 
+        .dma_desc_num = dma_buffer_count, 
+        .dma_frame_num = frame_size, 
+        .auto_clear_after_cb = false, 
+        .auto_clear_before_cb = false,
+        .allow_pd = false, 
+        .intr_priority = 0, 
+    };
+    ESP_ERROR_CHECK(i2s_new_channel(&i2s_chan_config_2, output_chan_ptr, NULL));
+
+    i2s_std_config_t i2s_out_config = {
+        .clk_cfg  = I2S_STD_CLK_DEFAULT_CONFIG(sample_rate),
+        .slot_cfg = I2S_STD_MSB_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO),
+        .gpio_cfg = {
+            .mclk = I2S_GPIO_UNUSED,
+            .bclk = GPIO_NUM_26,
+            .ws   = GPIO_NUM_25,
+            .dout = GPIO_NUM_22,
+            .din  = I2S_GPIO_UNUSED,
+            .invert_flags = {
+                .mclk_inv = false,
+                .bclk_inv = false,
+                .ws_inv   = false,
+            },
+        },
+    };
+    ESP_ERROR_CHECK(i2s_channel_init_std_mode(*output_chan_ptr, &i2s_out_config));
+    printf("I2S output driver initialized\n");
+}
+
+void bt_init() {
     ESP_LOGI("TEST", "Start");
 
     // Release BLE memory first
@@ -80,7 +208,7 @@ void app_main(void)
     ESP_LOGI("TEST", "Bluedroid enabled");
 
     // Set device name and visibility
-    ESP_ERROR_CHECK(esp_bt_gap_set_device_name("ESP32_A2DP"));
+    ESP_ERROR_CHECK(esp_bt_gap_set_device_name("ESP32 Karaoke"));
     ESP_ERROR_CHECK(esp_bt_gap_set_scan_mode(ESP_BT_CONNECTABLE, ESP_BT_GENERAL_DISCOVERABLE));
 
     ESP_LOGI("TEST", "BT ready");
