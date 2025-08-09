@@ -19,12 +19,13 @@
 #define RINGBUFFER_CAPACITY sizeof(int32_t) * FRAME_SIZE * DMA_BUFFER_COUNT
 
 // globals
-// static int32_t global_buffer[DMA_BUFFER_COUNT][FRAME_SIZE]; // buffer roll for i2s mic input.
+static int32_t global_buffer[DMA_BUFFER_COUNT][FRAME_SIZE]; // buffer roll for i2s mic input.
 i2s_chan_handle_t i2s_in_handle = NULL; // i2s mic input stream
 i2s_chan_handle_t i2s_out_handle = NULL; // i2s output stream
 RingbufHandle_t bt_ringbuf = NULL; // bluetooth input bytes
 QueueHandle_t i2s_queue_free = NULL;
 QueueHandle_t i2s_queue_busy = NULL;
+static bool bt_playing = false;
 
 void temp_i2s_in_init();
 void temp_i2s_out_init();
@@ -62,8 +63,6 @@ void bt_app_gap_cb(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t* param) {
 
 // Dummy audio data handler
 void bt_app_a2d_data_cb(const uint8_t* data, uint32_t len) {
-    // TODO: Later pass to I2S pipeline
-    // ESP_LOGI(TAG, "Received audio data: %lu bytes", len);
     // write to ringbuffer. separate thread will write to i2s
     if (xRingbufferSend(bt_ringbuf, data, len, 0) != pdTRUE) { // write failed. callback must be nonblocking
         ESP_LOGI(TAG, "Ringbuffer is full");
@@ -79,49 +78,24 @@ void bt_app_a2d_cb(esp_a2d_cb_event_t event, esp_a2d_cb_param_t* param) {
 
     switch(event) {
         case ESP_A2D_CONNECTION_STATE_EVT: // handle a2dp connections
-            if (a2d->conn_stat.state == ESP_A2D_CONNECTION_STATE_CONNECTING) {
-                // init i2s
-                temp_i2s_out_init();
-            } else if (a2d->conn_stat.state == ESP_A2D_CONNECTION_STATE_CONNECTED) {
-                // start up i2s stuff
+            if (a2d->conn_stat.state == ESP_A2D_CONNECTION_STATE_CONNECTED) {
                 if ((bt_ringbuf = xRingbufferCreate(RINGBUFFER_CAPACITY, RINGBUF_TYPE_BYTEBUF)) == NULL) {
                     ESP_LOGE(TAG, "%s ringbuffer create failed", __func__);
                     return;
                 } // ringbuf needs to exist before a2dp connnections
+                bt_playing = false;
                 ESP_LOGI(TAG, "Ringbuffer created");
-                /*
-                // queue for incoming i2s data
-                i2s_queue_free = xQueueCreate(DMA_BUFFER_COUNT, sizeof(int32_t*)); // store pointers to i2s data buffers
-                if (i2s_queue_free == NULL) {
-                    ESP_LOGE(TAG, "%s free queue create failed", __func__);
-                    return;
-                }
-
-                // set all initial buffers to free
-                for (uint8_t i = 0; i < DMA_BUFFER_COUNT; i++) {
-                    int32_t* p = global_buffer[i];
-                    xQueueSend(i2s_queue_free, &p, portMAX_DELAY);
-                }
-
-                // queue for outstream i2s data
-                i2s_queue_busy = xQueueCreate(DMA_BUFFER_COUNT, sizeof(int32_t*)); // store pointers to i2s data buffers
-                if (i2s_queue_busy == NULL) {
-                    ESP_LOGE(TAG, "%s busy queue create failed", __func__);
-                    vQueueDelete(i2s_queue_free);
-                    return;
-                }*/
-                // ESP_ERROR_CHECK(i2s_channel_enable(i2s_in_handle));
-                ESP_ERROR_CHECK(i2s_channel_enable(i2s_out_handle));
-                ESP_LOGI(TAG, "I2S enabled");
-                xTaskCreate(i2s_write_task, "i2s_write_task", 4096, NULL, 5, NULL);
-                ESP_LOGI(TAG, "I2S Write Task has begun");
-                // xTaskCreate(i2s_read_task, "i2s_read_task", 4096, NULL, 5, NULL);
-                // ESP_LOGI(TAG, "I2S Read Task has begun");
+            } else if (a2d->conn_stat.state == ESP_A2D_CONNECTION_STATE_DISCONNECTED) {
+                bt_playing = false;
             }
             break;
         case ESP_A2D_AUDIO_CFG_EVT: // when audio codec configure
-            // configure frequency.
+            // configure frequency. might not do this
             ESP_LOGI(TAG, "config A2DP event: %d", event);
+            break;
+        case ESP_A2D_AUDIO_STATE_EVT: // pause, play
+            if (a2d->audio_stat.state == ESP_A2D_AUDIO_STATE_STARTED) bt_playing = true;
+            else if (a2d->audio_stat.state == ESP_A2D_AUDIO_STATE_SUSPEND) bt_playing = false;
             break;
         default:
             ESP_LOGI(TAG, "Unhandled A2DP event: %d", event);
@@ -133,7 +107,40 @@ void bt_app_a2d_cb(esp_a2d_cb_event_t event, esp_a2d_cb_param_t* param) {
 void bt_init();
 
 void app_main(void)
-{   
+{       
+    // queue for incoming i2s data
+    i2s_queue_free = xQueueCreate(DMA_BUFFER_COUNT, sizeof(int32_t*)); // store pointers to i2s data buffers
+    if (i2s_queue_free == NULL) {
+        ESP_LOGE(TAG, "%s free queue create failed", __func__);
+        return;
+    }
+
+    // set all initial buffers to free
+    for (uint8_t i = 0; i < DMA_BUFFER_COUNT; i++) {
+        int32_t* p = global_buffer[i];
+        xQueueSend(i2s_queue_free, &p, portMAX_DELAY);
+    }
+
+    // queue for outstream i2s data
+    i2s_queue_busy = xQueueCreate(DMA_BUFFER_COUNT, sizeof(int32_t*)); // store pointers to i2s data buffers
+    if (i2s_queue_busy == NULL) {
+        ESP_LOGE(TAG, "%s busy queue create failed", __func__);
+        vQueueDelete(i2s_queue_free);
+        return;
+    }
+
+    // init i2s
+    temp_i2s_in_init();
+    temp_i2s_out_init();
+
+    ESP_ERROR_CHECK(i2s_channel_enable(i2s_in_handle));
+    ESP_ERROR_CHECK(i2s_channel_enable(i2s_out_handle));
+    ESP_LOGI(TAG, "I2S enabled");
+    xTaskCreate(i2s_write_task, "i2s_write_task", 4096, NULL, 5, NULL);
+    ESP_LOGI(TAG, "I2S Write Task has begun");
+    xTaskCreate(i2s_read_task, "i2s_read_task", 4096, NULL, 5, NULL);
+    ESP_LOGI(TAG, "I2S Read Task has begun");
+
     bt_init();
 }
 
@@ -154,20 +161,40 @@ void i2s_read_task(void* param) {
 // i2s output to speaker
 void i2s_write_task(void *param) {
     uint8_t* byte_data = NULL;
-    int16_t output_buffer[FRAME_SIZE*2];
-    size_t item_size = 0;
+    int32_t* i2s_mic_data = NULL;
     while (1) {
-        byte_data = xRingbufferReceiveUpTo(bt_ringbuf, &item_size, portMAX_DELAY, 2*sizeof(int16_t) * FRAME_SIZE);
-        if (item_size != 0) {
-            for (int i = 0; i < item_size; i+=2) {
-                output_buffer[i/2] = (int16_t)(((uint16_t)byte_data[i+1] << 8) | byte_data[i]);
+        int16_t output_buffer[FRAME_SIZE*2] = {0};
+        if (bt_playing) {
+            // first handle a2dp stuff if bluetooth is on
+            size_t item_size = 0;
+            byte_data = xRingbufferReceiveUpTo(bt_ringbuf, &item_size, pdMS_TO_TICKS(20), 2*sizeof(int16_t) * FRAME_SIZE);
+            if (item_size != 0) {
+                for (int i = 0; i < item_size; i+=2) {
+                    output_buffer[i/2] = ((int16_t)(((uint16_t)byte_data[i+1] << 8) | byte_data[i]));
+                }
+                
+                vRingbufferReturnItem(bt_ringbuf, byte_data);    
             }
-            i2s_channel_write(i2s_out_handle, output_buffer, FRAME_SIZE*sizeof(int16_t)*2, NULL, portMAX_DELAY);
-            
-            vRingbufferReturnItem(bt_ringbuf, byte_data);
-        } else {
-            printf("Failed to receive i2s data from ringbuffer\n");
         }
+        
+        // then pipe in mic if successful
+        if (xQueueReceive(i2s_queue_busy, &i2s_mic_data, pdMS_TO_TICKS(20)) == pdTRUE) {
+            if (i2s_mic_data != NULL) {
+                for (int i = 0; i < FRAME_SIZE*2; i+=2) {
+                    int16_t mic_reading_16 = (int16_t)(i2s_mic_data[i / 2] >> 16);
+                    output_buffer[i] += (mic_reading_16);
+                    output_buffer[i+1] += (mic_reading_16);
+                }
+            }
+            if (xQueueSend(i2s_queue_free, &i2s_mic_data, pdMS_TO_TICKS(20)) != pdTRUE) {
+                printf("Could not return buffer to free queue\n");
+            } 
+        } else {
+            printf("Failed to receive i2s data from queue\n");
+        }    
+
+        // write to i2s.
+        i2s_channel_write(i2s_out_handle, output_buffer, FRAME_SIZE*sizeof(int16_t)*2, NULL, portMAX_DELAY);  
     }
 }
 
