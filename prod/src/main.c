@@ -19,10 +19,16 @@
 #define RINGBUFFER_CAPACITY sizeof(int32_t) * FRAME_SIZE * DMA_BUFFER_COUNT
 
 // globals
+// static int32_t global_buffer[DMA_BUFFER_COUNT][FRAME_SIZE]; // buffer roll for i2s mic input.
+i2s_chan_handle_t i2s_in_handle = NULL; // i2s mic input stream
 i2s_chan_handle_t i2s_out_handle = NULL; // i2s output stream
 RingbufHandle_t bt_ringbuf = NULL; // bluetooth input bytes
+QueueHandle_t i2s_queue_free = NULL;
+QueueHandle_t i2s_queue_busy = NULL;
 
-void temp_i2s_init();
+void temp_i2s_in_init();
+void temp_i2s_out_init();
+void i2s_read_task();
 void i2s_write_task();
 
 // on connection request
@@ -75,7 +81,7 @@ void bt_app_a2d_cb(esp_a2d_cb_event_t event, esp_a2d_cb_param_t* param) {
         case ESP_A2D_CONNECTION_STATE_EVT: // handle a2dp connections
             if (a2d->conn_stat.state == ESP_A2D_CONNECTION_STATE_CONNECTING) {
                 // init i2s
-                temp_i2s_init();
+                temp_i2s_out_init();
             } else if (a2d->conn_stat.state == ESP_A2D_CONNECTION_STATE_CONNECTED) {
                 // start up i2s stuff
                 if ((bt_ringbuf = xRingbufferCreate(RINGBUFFER_CAPACITY, RINGBUF_TYPE_BYTEBUF)) == NULL) {
@@ -83,10 +89,34 @@ void bt_app_a2d_cb(esp_a2d_cb_event_t event, esp_a2d_cb_param_t* param) {
                     return;
                 } // ringbuf needs to exist before a2dp connnections
                 ESP_LOGI(TAG, "Ringbuffer created");
+                /*
+                // queue for incoming i2s data
+                i2s_queue_free = xQueueCreate(DMA_BUFFER_COUNT, sizeof(int32_t*)); // store pointers to i2s data buffers
+                if (i2s_queue_free == NULL) {
+                    ESP_LOGE(TAG, "%s free queue create failed", __func__);
+                    return;
+                }
+
+                // set all initial buffers to free
+                for (uint8_t i = 0; i < DMA_BUFFER_COUNT; i++) {
+                    int32_t* p = global_buffer[i];
+                    xQueueSend(i2s_queue_free, &p, portMAX_DELAY);
+                }
+
+                // queue for outstream i2s data
+                i2s_queue_busy = xQueueCreate(DMA_BUFFER_COUNT, sizeof(int32_t*)); // store pointers to i2s data buffers
+                if (i2s_queue_busy == NULL) {
+                    ESP_LOGE(TAG, "%s busy queue create failed", __func__);
+                    vQueueDelete(i2s_queue_free);
+                    return;
+                }*/
+                // ESP_ERROR_CHECK(i2s_channel_enable(i2s_in_handle));
                 ESP_ERROR_CHECK(i2s_channel_enable(i2s_out_handle));
                 ESP_LOGI(TAG, "I2S enabled");
                 xTaskCreate(i2s_write_task, "i2s_write_task", 4096, NULL, 5, NULL);
                 ESP_LOGI(TAG, "I2S Write Task has begun");
+                // xTaskCreate(i2s_read_task, "i2s_read_task", 4096, NULL, 5, NULL);
+                // ESP_LOGI(TAG, "I2S Read Task has begun");
             }
             break;
         case ESP_A2D_AUDIO_CFG_EVT: // when audio codec configure
@@ -107,31 +137,32 @@ void app_main(void)
     bt_init();
 }
 
+// read in i2s 
+void i2s_read_task(void* param) {
+    int32_t* raw_input_buffer;
+    while(1) {
+        if (xQueueReceive(i2s_queue_free, &raw_input_buffer, portMAX_DELAY) == pdTRUE) { // Queue send and receive work with pointers of pointers
+            if (i2s_read_once(&i2s_in_handle, raw_input_buffer, FRAME_SIZE) == ESP_OK) {
+                if (xQueueSend(i2s_queue_busy, &raw_input_buffer, portMAX_DELAY) != pdTRUE) {
+                    printf("Could not send data to busy queue\n");
+                } 
+            }
+        }
+    }
+}
+
 // i2s output to speaker
 void i2s_write_task(void *param) {
-    int8_t* byte_data = NULL;
+    uint8_t* byte_data = NULL;
+    int16_t output_buffer[FRAME_SIZE*2];
     size_t item_size = 0;
     while (1) {
         byte_data = xRingbufferReceiveUpTo(bt_ringbuf, &item_size, portMAX_DELAY, 2*sizeof(int16_t) * FRAME_SIZE);
-        //ESP_LOGI(TAG, "I2S write task");
         if (item_size != 0) {
-            /*
-            int16_t i2s_data[FRAME_SIZE*2] = {0};
-            for (int i = 0; i < item_size; i += 4) {
-                // Read Left and Right 16-bit samples (LSB is first)
-                int16_t left  = (int16_t)(byte_data[i+1] | (byte_data[i] << 8));
-                int16_t right = (int16_t)(byte_data[i+3] | (byte_data[i+2] << 8));
-
-                // Downmix to mono (simple average)
-                int32_t mono = (((int32_t)left) >> 1) + (((int32_t)right) >> 1);
-
-                // Left-justify into 32-bit I2S
-                i2s_data[i / 4] = mono << 16;
-                i2s_data[i / 2] = left >> 4;
-                i2s_data[i / 2 + 1] = right >> 4; // down scaling holy loud
-            } */
-            // i2s_write_once(&i2s_out_handle, i2s_data, FRAME_SIZE);
-            i2s_channel_write(i2s_out_handle, byte_data, FRAME_SIZE*sizeof(int16_t)*2, NULL, portMAX_DELAY);
+            for (int i = 0; i < item_size; i+=2) {
+                output_buffer[i/2] = (int16_t)(((uint16_t)byte_data[i+1] << 8) | byte_data[i]);
+            }
+            i2s_channel_write(i2s_out_handle, output_buffer, FRAME_SIZE*sizeof(int16_t)*2, NULL, portMAX_DELAY);
             
             vRingbufferReturnItem(bt_ringbuf, byte_data);
         } else {
@@ -140,7 +171,46 @@ void i2s_write_task(void *param) {
     }
 }
 
-void temp_i2s_init() {
+void temp_i2s_in_init() {
+    int dma_buffer_count = DMA_BUFFER_COUNT;
+    int frame_size = FRAME_SIZE;
+    int sample_rate = SAMPLE_RATE;
+    i2s_chan_handle_t* input_chan_ptr = &i2s_in_handle;
+    // INPUT
+    // initialize i2s channel and i2s settings
+    i2s_chan_config_t i2s_chan_config_1 = {  // shared between input and output
+        .id = I2S_NUM_0, 
+        .role = I2S_ROLE_MASTER, 
+        .dma_desc_num = dma_buffer_count, 
+        .dma_frame_num = frame_size, 
+        .auto_clear_after_cb = false, 
+        .auto_clear_before_cb = false,
+        .allow_pd = false, 
+        .intr_priority = 0, 
+    };
+    ESP_ERROR_CHECK(i2s_new_channel(&i2s_chan_config_1, NULL, input_chan_ptr));
+    
+    i2s_std_config_t i2s_in_config = {
+        .clk_cfg  = I2S_STD_CLK_DEFAULT_CONFIG(sample_rate),
+        .slot_cfg = I2S_STD_MSB_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_32BIT, I2S_SLOT_MODE_MONO),
+        .gpio_cfg = {
+            .mclk = I2S_GPIO_UNUSED,
+            .bclk = GPIO_NUM_33,
+            .ws   = GPIO_NUM_32,
+            .dout = I2S_GPIO_UNUSED,
+            .din  = GPIO_NUM_34,
+            .invert_flags = {
+                .mclk_inv = false,
+                .bclk_inv = false,
+                .ws_inv   = false,
+            },
+        },
+    };
+    ESP_ERROR_CHECK(i2s_channel_init_std_mode(*input_chan_ptr, &i2s_in_config));
+    printf("I2S input driver initialized\n");
+}
+
+void temp_i2s_out_init() {
     int dma_buffer_count = DMA_BUFFER_COUNT;
     int frame_size = FRAME_SIZE;
     int sample_rate = SAMPLE_RATE;
