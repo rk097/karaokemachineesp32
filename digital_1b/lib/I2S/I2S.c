@@ -53,7 +53,7 @@ void i2s_init(i2s_chan_handle_t* input_chan_ptr, i2s_chan_handle_t* output_chan_
 
     i2s_std_config_t i2s_out_config = {
         .clk_cfg  = I2S_STD_CLK_DEFAULT_CONFIG(sample_rate),
-        .slot_cfg = I2S_STD_MSB_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_32BIT, I2S_SLOT_MODE_MONO),
+        .slot_cfg = I2S_STD_MSB_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO),
         .gpio_cfg = {
             .mclk = I2S_GPIO_UNUSED,
             .bclk = GPIO_NUM_26,
@@ -82,10 +82,10 @@ esp_err_t i2s_read_once(i2s_chan_handle_t* chan_handle_ptr, int32_t* data, size_
     return ret;
 }
 
-esp_err_t i2s_write_once(i2s_chan_handle_t* chan_handle_ptr, int32_t* data, size_t frame_size) {
+esp_err_t i2s_write_once(i2s_chan_handle_t* chan_handle_ptr, int16_t* data, size_t frame_size) {
     size_t bytes_written;
     // write to i2s
-    esp_err_t ret = i2s_channel_write(*chan_handle_ptr, data, frame_size*sizeof(int32_t), &bytes_written, portMAX_DELAY);
+    esp_err_t ret = i2s_channel_write(*chan_handle_ptr, data, frame_size*sizeof(int16_t)*2, &bytes_written, portMAX_DELAY);
     if (ret != ESP_OK) {
         if (ret == ESP_ERR_TIMEOUT) printf("I2S write timeout\n");
         else printf("I2S write error: %d\n", ret);
