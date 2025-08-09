@@ -16,7 +16,7 @@
 #include "I2S.h"
 
 #define TAG "A2DP"
-#define RINGBUFFER_CAPACITY sizeof(int32_t) * FRAME_SIZE * DMA_BUFFER_COUNT
+#define RINGBUFFER_CAPACITY sizeof(int32_t) * FRAME_SIZE * DMA_BUFFER_COUNT *2
 
 // globals
 static int32_t global_buffer[DMA_BUFFER_COUNT][FRAME_SIZE]; // buffer roll for i2s mic input.
@@ -167,7 +167,7 @@ void i2s_write_task(void *param) {
         if (bt_playing) {
             // first handle a2dp stuff if bluetooth is on
             size_t item_size = 0;
-            byte_data = xRingbufferReceiveUpTo(bt_ringbuf, &item_size, pdMS_TO_TICKS(20), 2*sizeof(int16_t) * FRAME_SIZE);
+            byte_data = xRingbufferReceiveUpTo(bt_ringbuf, &item_size, 0, 2*sizeof(int16_t) * FRAME_SIZE);
             if (item_size != 0) {
                 for (int i = 0; i < item_size; i+=2) {
                     output_buffer[i/2] = ((int16_t)(((uint16_t)byte_data[i+1] << 8) | byte_data[i]));
@@ -186,7 +186,7 @@ void i2s_write_task(void *param) {
                     output_buffer[i+1] += (mic_reading_16);
                 }
             }
-            if (xQueueSend(i2s_queue_free, &i2s_mic_data, pdMS_TO_TICKS(20)) != pdTRUE) {
+            if (xQueueSend(i2s_queue_free, &i2s_mic_data, portMAX_DELAY) != pdTRUE) {
                 printf("Could not return buffer to free queue\n");
             } 
         } else {
@@ -194,7 +194,7 @@ void i2s_write_task(void *param) {
         }    
 
         // write to i2s.
-        i2s_channel_write(i2s_out_handle, output_buffer, FRAME_SIZE*sizeof(int16_t)*2, NULL, portMAX_DELAY);  
+        i2s_channel_write(i2s_out_handle, output_buffer, FRAME_SIZE*sizeof(int16_t)*2, NULL, pdMS_TO_TICKS(20));  
     }
 }
 
