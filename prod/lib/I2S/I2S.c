@@ -81,15 +81,3 @@ esp_err_t i2s_read_once(i2s_chan_handle_t* chan_handle_ptr, int32_t* data, size_
     } 
     return ret;
 }
-
-esp_err_t i2s_write_once(i2s_chan_handle_t* chan_handle_ptr, int16_t* data, size_t frame_size) {
-    size_t bytes_written;
-    // write to i2s
-    esp_err_t ret = i2s_channel_write(*chan_handle_ptr, data, frame_size*sizeof(int16_t)*2, &bytes_written, portMAX_DELAY);
-    if (ret != ESP_OK) {
-        if (ret == ESP_ERR_TIMEOUT) printf("I2S write timeout\n");
-        else printf("I2S write error: %d\n", ret);
-    } 
-
-    return ret;
-}

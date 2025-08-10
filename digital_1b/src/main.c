@@ -21,10 +21,6 @@ void i2s_read_task(void* param) {
     while(1) {
         if (xQueueReceive(i2s_queue_free, &raw_input_buffer, portMAX_DELAY) == pdTRUE) { // Queue send and receive work with pointers of pointers
             if (i2s_read_once(&i2s_in_handle, raw_input_buffer, FRAME_SIZE) == ESP_OK) {
-                for (uint16_t i = 0; i < FRAME_SIZE; i++) {
-                    raw_input_buffer[i] <<= 1; // because MSB starts in pos 2
-                   // raw_input_buffer[i] >>= 8; // drop off garbage bits in 24-bit format, not needed because output expects MSB-format (upper 3 bits)
-                }
                 if (xQueueSend(i2s_queue_busy, &raw_input_buffer, portMAX_DELAY) != pdTRUE) {
                     printf("Could not send data to busy queue\n");
                 } 
@@ -36,10 +32,15 @@ void i2s_read_task(void* param) {
 // i2s output to speaker
 void i2s_write_task(void *param) {
     int32_t* i2s_data = NULL;
+    int16_t output_buffer[FRAME_SIZE*2];
     while (1) {
         if (xQueueReceive(i2s_queue_busy, &i2s_data, portMAX_DELAY) == pdTRUE) {
             if (i2s_data != NULL) {
-                i2s_write_once(&i2s_out_handle, i2s_data, FRAME_SIZE);
+                for (int i = 0; i < FRAME_SIZE*2; i+=2) {
+                    output_buffer[i] = (int16_t)(i2s_data[i / 2] >> 16);
+                    output_buffer[i+1] = output_buffer[i];
+                }
+                i2s_write_once(&i2s_out_handle, output_buffer, FRAME_SIZE);
             }
             if (xQueueSend(i2s_queue_free, &i2s_data, portMAX_DELAY) != pdTRUE) {
                 printf("Could not return buffer to free queue\n");
