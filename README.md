@@ -9,7 +9,7 @@ This project is a karaoke machine running on an ESP32 with real-time microphone 
 
 # Key Docs
 
-![Block Diagram](https://file.notion.so/f/f/dce0f1e2-797a-4225-bacf-896b69545404/8c73ef9f-1fb2-4e75-a91c-147591f6add2/block_diagram.png?table=block&id=24b770ea-64d5-800c-9eb0-cf5cec6d83f0&spaceId=dce0f1e2-797a-4225-bacf-896b69545404&expirationTimestamp=1755748800000&signature=X_-e2vPkIdZAZDg5JqVkYakJabIVtUI4PhHUa_3AB_M&downloadName=block+diagram.png)
+![Block Diagram](https://github.com/rk097/karaokemachineesp32/blob/main/block%20diagram%20(1).png)
 
 [Wiring Diagram](https://file.notion.so/f/f/dce0f1e2-797a-4225-bacf-896b69545404/6f5c912d-381d-4fb7-8032-4daa70507e28/phase1b_revision_(1).pdf?table=block&id=24b770ea-64d5-8063-809a-e8532cb6c82a&spaceId=dce0f1e2-797a-4225-bacf-896b69545404&expirationTimestamp=1755748800000&signature=Kvdq9OLUOCf4rS-XeV-Pk1Zj9XoLNzcCLjPR1AQMpKE&downloadName=phase1b_revision+%281%29.pdf)
 
