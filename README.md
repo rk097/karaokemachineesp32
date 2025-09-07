@@ -2,6 +2,8 @@
 
 This project is a karaoke machine running on an ESP32 with real-time microphone input and Bluetooth audio playback. Karaoke is one of my biggest hobbies, so I figured that this would be a fun summer project (summer of ‘25). 
 
+# Demo
+
 [Video of Karaoke Machine](https://drive.google.com/file/d/1xvGhG7RybF9_WGpnsYIVt7294XtBMqaj/view?usp=sharing)
 
 > See it in action!
