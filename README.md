@@ -66,4 +66,4 @@ The INMP441 sends its data in left-justified 24-bit mono I2S (in a 32-bit contai
 
 Instinctually, one would want to preserve as much precision as possible (as opposed to audio compression), but when trying to upscale 16-bit stereo I2S into 32 bits, no matter what I tried there was always the introduction of noise, whether I played back in mono or stereo. 
 
-Because of this, I revisited my Phase 1B Microphone code and modularly determined that compressing the 24-bit stream into 16-bits and duplicating it from mono to stereo was viable, leading me to ultimately choose the compressed 16-bit stereo output format as my final course of action.
+Because of this, I revisited my Phase 1B Microphone code and modularly determined that compressing the 24-bit stream into 16-bits and duplicating it from mono to stereo was viable, leading me to ultimately choose the compressed 16-bit stereo output format as my final course of action. (Update in 2026: probably has something to do with the fact that I left Gain floating on the DAC which defaults to 9dB which probably led to distortion on the sound output when upscaling to 32)
